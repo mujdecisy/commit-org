@@ -1,6 +1,6 @@
 {
   "name": "commit-org",
-  "version": "0.1.5",
+  "version": "0.1.9",
   "description": "Simple git commit editor",
   "main": "out/main/index.js",
   "scripts": {
