@@ -249,10 +249,11 @@ function CommitPanel({ repoPath, wholeFiles, hunkPatches, totalCount, onCommitte
 interface HistoryPanelProps {
   repoPath: string
   log: CommitEntry[]
+  logError: string | null
   onReset: () => void
 }
 
-function HistoryPanel({ repoPath, log, onReset }: HistoryPanelProps) {
+function HistoryPanel({ repoPath, log, logError, onReset }: HistoryPanelProps) {
   const [expanded, setExpanded] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [upstream, setUpstream] = useState<UpstreamInfo | null>(null)
@@ -284,6 +285,15 @@ function HistoryPanel({ repoPath, log, onReset }: HistoryPanelProps) {
     } finally {
       setBusy(false)
     }
+  }
+
+  if (logError) {
+    return (
+      <div className="history-error">
+        <div className="history-error-title">Could not load history</div>
+        <pre className="history-error-detail">{logError}</pre>
+      </div>
+    )
   }
 
   if (log.length === 0) {
@@ -361,6 +371,7 @@ export default function App() {
   const [rightTab, setRightTab] = useState<'commit' | 'history'>('commit')
   const [loading, setLoading] = useState(false)
   const [disclaimerDismissed, setDisclaimerDismissed] = useState(false)
+  const [logError, setLogError] = useState<string | null>(null)
 
   // active diff state
   const [activeFile, setActiveFile] = useState<string | null>(null)
@@ -379,7 +390,13 @@ export default function App() {
     try {
       const [s, l] = await Promise.all([window.git.getStatus(path), window.git.getLog(path)])
       setStatus(s)
-      setLog(l)
+      if (Array.isArray(l)) {
+        setLog(l)
+        setLogError(null)
+      } else {
+        setLog([])
+        setLogError(l.error)
+      }
       // default: all files fully selected
       const modes = new Map<string, FileMode>()
       s.files.forEach((f) => modes.set(f.path, 'full'))
@@ -633,6 +650,7 @@ export default function App() {
               <HistoryPanel
                 repoPath={repoPath}
                 log={log}
+                logError={logError}
                 onReset={() => refresh(repoPath)}
               />
             )}

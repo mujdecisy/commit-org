@@ -526,6 +526,30 @@ html, body, #root { height: 100%; overflow: hidden; }
   flex-shrink: 0;
 }
 
+/* ── History error ───────────────────────────────────────────────────────── */
+.history-error {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.history-error-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--remove);
+}
+.history-error-detail {
+  font-family: 'SF Mono', 'Consolas', monospace;
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: pre-wrap;
+  word-break: break-all;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 8px;
+}
+
 /* ── Scrollbars ──────────────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }

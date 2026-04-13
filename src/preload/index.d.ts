@@ -28,7 +28,7 @@ export interface GitAPI {
   openProject(): Promise<string | null>
   getStatus(path: string): Promise<StatusResult>
   getDiff(path: string, file: string): Promise<string>
-  getLog(path: string): Promise<CommitEntry[]>
+  getLog(path: string): Promise<CommitEntry[] | { error: string }>
   resetToCommit(path: string, hash: string, mode: string): Promise<void>
   getUpstreamInfo(path: string): Promise<UpstreamInfo>
   resetToUpstream(path: string, mode: string): Promise<void>

@@ -4,6 +4,17 @@ import { readFileSync, writeFileSync, unlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import simpleGit from 'simple-git'
 
+// On Windows, GUI apps don't inherit the shell PATH, so git may not be found.
+// Prepend the common Git for Windows install locations.
+if (process.platform === 'win32') {
+  const gitPaths = [
+    'C:\\Program Files\\Git\\cmd',
+    'C:\\Program Files\\Git\\bin',
+    'C:\\Program Files (x86)\\Git\\cmd',
+  ]
+  process.env['PATH'] = [...gitPaths, process.env['PATH'] ?? ''].join(';')
+}
+
 const HASH_SHORT_LEN = 7
 
 function createWindow(): void {
@@ -102,8 +113,8 @@ ipcMain.handle('git:getLog', async (_, repoPath: string) => {
       date: entry.date.slice(0, 16).replace('T', ' '),
       author: entry.author_name
     }))
-  } catch {
-    return []
+  } catch (e) {
+    return { error: String(e) }
   }
 })
 
