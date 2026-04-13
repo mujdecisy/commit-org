@@ -131,16 +131,11 @@ class WslGitAdapter implements GitAdapter {
   }
 
   private async run(args: string[], env?: Record<string, string>): Promise<string> {
-    const envPrefix = env
-      ? Object.entries(env).map(([k, v]) => `${k}=${v}`)
-      : []
-    const wslArgs = [
-      '-d', this.distro, '--',
-      ...(envPrefix.length > 0 ? ['env', ...envPrefix] : []),
-      'git', '-C', this.linuxPath,
-      ...args
-    ]
-    const { stdout } = await execFileAsync('wsl', wslArgs)
+    // Use -e to execute git directly without invoking a shell inside WSL.
+    // This avoids shell interpretation of special characters in arguments.
+    const wslArgs = ['-d', this.distro, '-e', 'git', '-C', this.linuxPath, ...args]
+    const extraEnv = env ? { ...process.env, ...env } : process.env
+    const { stdout } = await execFileAsync('wsl', wslArgs, { env: extraEnv })
     return stdout
   }
 
@@ -166,20 +161,27 @@ class WslGitAdapter implements GitAdapter {
   }
 
   async log(opts: { maxCount: number }): Promise<LogResult> {
-    const SEP = '||COMMIT||'
+    // %x00 = null byte — safe field/record separator, never shell-interpreted
     const out = await this.run([
       'log',
       `--max-count=${opts.maxCount}`,
-      `--format=%H\x1f%s\x1f%ai\x1f%an${SEP}`
+      '--format=%H%x00%s%x00%ai%x00%an%x00'
     ])
     const all: LogEntry[] = out
-      .split(SEP)
-      .map((block) => block.trim())
-      .filter(Boolean)
-      .map((block) => {
-        const [hash, message, date, author_name] = block.split('\x1f')
-        return { hash: hash ?? '', message: message ?? '', date: date ?? '', author_name: author_name ?? '' }
-      })
+      .split('\0')
+      .reduce<string[][]>((rows, token, i) => {
+        const idx = Math.floor(i / 4)
+        if (!rows[idx]) rows[idx] = []
+        rows[idx].push(token)
+        return rows
+      }, [])
+      .filter((row) => row[0]?.trim())
+      .map(([hash, message, date, authorName]) => ({
+        hash: hash ?? '',
+        message: message ?? '',
+        date: date ?? '',
+        author_name: authorName ?? ''
+      }))
     return { all }
   }
 
