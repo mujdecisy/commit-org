@@ -12,6 +12,6 @@ contextBridge.exposeInMainWorld('git', {
     ipcRenderer.invoke('git:resetToCommit', path, hash, mode),
   createCommit: (
     path: string,
-    opts: { message: string; date: string; files: string[] }
+    opts: { message: string; date: string; files: string[]; patches: string[] }
   ) => ipcRenderer.invoke('git:createCommit', path, opts)
 })

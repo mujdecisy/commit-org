@@ -1,6 +1,7 @@
 import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
 import { join } from 'node:path'
-import { readFileSync } from 'node:fs'
+import { readFileSync, writeFileSync, unlinkSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import simpleGit from 'simple-git'
 
 const HASH_SHORT_LEN = 7
@@ -113,9 +114,31 @@ ipcMain.handle('git:resetToCommit', async (_, repoPath: string, hash: string, mo
 
 ipcMain.handle(
   'git:createCommit',
-  async (_, repoPath: string, opts: { message: string; date: string; files: string[] }) => {
+  async (
+    _,
+    repoPath: string,
+    opts: { message: string; date: string; files: string[]; patches: string[] }
+  ) => {
     const git = simpleGit(repoPath)
-    await git.add(opts.files)
+
+    // Stage whole files
+    if (opts.files.length > 0) {
+      await git.add(opts.files)
+    }
+
+    // Apply patch strings for partial hunk selection
+    for (const patch of opts.patches) {
+      const tmp = join(tmpdir(), `commit-org-${Date.now()}.patch`)
+      writeFileSync(tmp, patch, 'utf-8')
+      try {
+        await git.raw(['apply', '--cached', '--whitespace=nowarn', tmp])
+      } finally {
+        try {
+          unlinkSync(tmp)
+        } catch { /* ignore */ }
+      }
+    }
+
     await git
       .env({ GIT_AUTHOR_DATE: opts.date, GIT_COMMITTER_DATE: opts.date })
       .commit(opts.message)

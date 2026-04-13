@@ -26,7 +26,7 @@ export interface GitAPI {
   resetToCommit(path: string, hash: string, mode: string): Promise<void>
   createCommit(
     path: string,
-    opts: { message: string; date: string; files: string[] }
+    opts: { message: string; date: string; files: string[]; patches: string[] }
   ): Promise<void>
 }
 

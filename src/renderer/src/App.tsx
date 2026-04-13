@@ -1,7 +1,20 @@
 import { useState, useCallback } from 'react'
 import type { FileStatus, CommitEntry, StatusResult } from '../../preload/index.d'
 
-// ── helpers ──────────────────────────────────────────────────────────────────
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+interface Hunk {
+  id: string        // `${filePath}::${index}`
+  header: string    // the @@ line
+  lines: string[]   // all lines in this hunk
+  filePath: string
+  fileHeader: string // "--- a/...\n+++ b/..."
+}
+
+// file is either fully selected, partially (some hunks), or deselected
+type FileMode = 'full' | 'partial' | 'none'
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function localDatetimeNow(): string {
   const d = new Date()
@@ -16,37 +29,137 @@ function statusLabel(f: FileStatus): string {
 }
 
 function statusColor(label: string): string {
-  const map: Record<string, string> = { M: '#e5c07b', A: '#98c379', D: '#e06c75', R: '#61afef', U: '#56b6c2' }
-  return map[label] ?? '#abb2bf'
+  const map: Record<string, string> = {
+    M: '#b07d00', A: '#1a7f3c', D: '#c0392b', R: '#2f6db5', U: '#5b4de8'
+  }
+  return map[label] ?? '#8e8e93'
+}
+
+/** Parse a unified diff string into Hunk objects */
+function parseHunks(filePath: string, diff: string): Hunk[] {
+  const lines = diff.split('\n')
+  const hunks: Hunk[] = []
+  let fileHeader = ''
+  let current: string[] | null = null
+  let hunkHeader = ''
+
+  for (const line of lines) {
+    if (line.startsWith('--- ') || line.startsWith('+++ ')) {
+      fileHeader += line + '\n'
+    } else if (line.startsWith('@@')) {
+      if (current !== null) {
+        hunks.push({
+          id: `${filePath}::${hunks.length}`,
+          header: hunkHeader,
+          lines: current,
+          filePath,
+          fileHeader
+        })
+      }
+      hunkHeader = line
+      current = []
+    } else if (current !== null) {
+      current.push(line)
+    }
+  }
+
+  if (current !== null && (current.length > 0 || hunkHeader)) {
+    hunks.push({
+      id: `${filePath}::${hunks.length}`,
+      header: hunkHeader,
+      lines: current,
+      filePath,
+      fileHeader
+    })
+  }
+
+  return hunks
+}
+
+/** Build a minimal patch string from selected hunks */
+function buildPatch(hunks: Hunk[]): string {
+  if (hunks.length === 0) return ''
+  const fileHeader = hunks[0].fileHeader
+  const body = hunks.map((h) => `${h.header}\n${h.lines.join('\n')}`).join('\n')
+  return `${fileHeader}${body}\n`
 }
 
 // ── DiffViewer ────────────────────────────────────────────────────────────────
 
-function DiffViewer({ diff, file }: { diff: string; file: string }) {
-  if (!diff.trim())
-    return (
-      <div className="diff-empty">
-        <span>No diff available</span>
-      </div>
-    )
+interface DiffViewerProps {
+  filePath: string
+  diff: string
+  fileMode: FileMode
+  selectedHunkIds: Set<string>
+  onToggleFile: () => void
+  onToggleHunk: (id: string) => void
+}
 
-  const lines = diff.split('\n')
+function DiffViewer({
+  filePath,
+  diff,
+  fileMode,
+  selectedHunkIds,
+  onToggleFile,
+  onToggleHunk
+}: DiffViewerProps) {
+  const hunks = parseHunks(filePath, diff)
+  const hasHunks = hunks.length > 0
+
+  if (!diff.trim()) {
+    return <div className="diff-empty"><span>No diff available</span></div>
+  }
+
   return (
     <div className="diff-viewer">
-      <div className="diff-file-header">{file}</div>
+      <div className="diff-file-header">
+        <label className="hunk-check-label" title="Toggle whole file">
+          <input
+            type="checkbox"
+            checked={fileMode !== 'none'}
+            ref={(el) => { if (el) el.indeterminate = fileMode === 'partial' }}
+            onChange={onToggleFile}
+          />
+          <span className="diff-file-name">{filePath}</span>
+        </label>
+        {hasHunks && (
+          <span className="hunk-count">{selectedHunkIds.size}/{hunks.length} hunks</span>
+        )}
+      </div>
+
       <pre className="diff-body">
-        {lines.map((line, i) => {
-          let cls = 'diff-line'
-          if (line.startsWith('+') && !line.startsWith('+++')) cls += ' diff-add'
-          else if (line.startsWith('-') && !line.startsWith('---')) cls += ' diff-remove'
-          else if (line.startsWith('@@')) cls += ' diff-hunk'
-          else if (line.startsWith('diff ') || line.startsWith('index ') || line.startsWith('---') || line.startsWith('+++')) cls += ' diff-meta'
-          return (
-            <div key={i} className={cls}>
-              {line || ' '}
+        {hasHunks ? hunks.map((hunk) => (
+          <div key={hunk.id} className="hunk-block">
+            <div className={`hunk-header-row${selectedHunkIds.has(hunk.id) ? ' selected' : ''}`}>
+              <label className="hunk-check-label">
+                <input
+                  type="checkbox"
+                  checked={selectedHunkIds.has(hunk.id)}
+                  onChange={() => onToggleHunk(hunk.id)}
+                />
+                <span className="diff-hunk">{hunk.header}</span>
+              </label>
             </div>
-          )
-        })}
+            {hunk.lines.map((line, i) => {
+              let cls = 'diff-line'
+              if (line.startsWith('+')) cls += ' diff-add'
+              else if (line.startsWith('-')) cls += ' diff-remove'
+              return (
+                <div key={i} className={cls}>{line || ' '}</div>
+              )
+            })}
+          </div>
+        )) : (
+          // No parsed hunks — render raw diff lines
+          diff.split('\n').map((line, i) => {
+            let cls = 'diff-line'
+            if (line.startsWith('+') && !line.startsWith('+++')) cls += ' diff-add'
+            else if (line.startsWith('-') && !line.startsWith('---')) cls += ' diff-remove'
+            else if (line.startsWith('@@')) cls += ' diff-hunk'
+            else if (line.startsWith('diff ') || line.startsWith('index ') || line.startsWith('---') || line.startsWith('+++')) cls += ' diff-meta'
+            return <div key={i} className={cls}>{line || ' '}</div>
+          })
+        )}
       </pre>
     </div>
   )
@@ -56,11 +169,13 @@ function DiffViewer({ diff, file }: { diff: string; file: string }) {
 
 interface CommitPanelProps {
   repoPath: string
-  selectedFiles: Set<string>
+  wholeFiles: string[]
+  hunkPatches: string[]
+  totalCount: number
   onCommitted: () => void
 }
 
-function CommitPanel({ repoPath, selectedFiles, onCommitted }: CommitPanelProps) {
+function CommitPanel({ repoPath, wholeFiles, hunkPatches, totalCount, onCommitted }: CommitPanelProps) {
   const [message, setMessage] = useState('')
   const [date, setDate] = useState(localDatetimeNow)
   const [busy, setBusy] = useState(false)
@@ -68,14 +183,15 @@ function CommitPanel({ repoPath, selectedFiles, onCommitted }: CommitPanelProps)
 
   const commit = async () => {
     if (!message.trim()) { setError('Commit message is required'); return }
-    if (selectedFiles.size === 0) { setError('No files selected'); return }
+    if (totalCount === 0) { setError('Nothing selected'); return }
     setBusy(true)
     setError('')
     try {
       await window.git.createCommit(repoPath, {
         message: message.trim(),
         date: new Date(date).toISOString(),
-        files: [...selectedFiles]
+        files: wholeFiles,
+        patches: hunkPatches
       })
       setMessage('')
       setDate(localDatetimeNow())
@@ -110,14 +226,17 @@ function CommitPanel({ repoPath, selectedFiles, onCommitted }: CommitPanelProps)
       </div>
       <div className="panel-section">
         <div className="selected-count">
-          {selectedFiles.size} file{selectedFiles.size !== 1 ? 's' : ''} selected
+          {wholeFiles.length > 0 && <span>{wholeFiles.length} whole file{wholeFiles.length !== 1 ? 's' : ''}</span>}
+          {wholeFiles.length > 0 && hunkPatches.length > 0 && <span> · </span>}
+          {hunkPatches.length > 0 && <span>{hunkPatches.length} partial file{hunkPatches.length !== 1 ? 's' : ''}</span>}
+          {totalCount === 0 && <span>Nothing selected</span>}
         </div>
       </div>
       {error && <div className="error-msg">{error}</div>}
       <button
         className="commit-btn"
         onClick={commit}
-        disabled={busy || selectedFiles.size === 0 || !message.trim()}
+        disabled={busy || totalCount === 0 || !message.trim()}
       >
         {busy ? 'Committing…' : 'Commit'}
       </button>
@@ -150,8 +269,9 @@ function HistoryPanel({ repoPath, log, onReset }: HistoryPanelProps) {
     }
   }
 
-  if (log.length === 0)
+  if (log.length === 0) {
     return <div className="diff-empty"><span>No commits yet</span></div>
+  }
 
   return (
     <div className="history-list">
@@ -169,25 +289,13 @@ function HistoryPanel({ repoPath, log, onReset }: HistoryPanelProps) {
             <div className="history-actions">
               <span className="history-author">{entry.author}</span>
               <div className="reset-buttons">
-                <button
-                  className="reset-btn soft"
-                  disabled={busy}
-                  onClick={() => reset(entry.hash, 'soft')}
-                >
+                <button className="reset-btn soft" disabled={busy} onClick={() => reset(entry.hash, 'soft')}>
                   Reset soft
                 </button>
-                <button
-                  className="reset-btn mixed"
-                  disabled={busy}
-                  onClick={() => reset(entry.hash, 'mixed')}
-                >
+                <button className="reset-btn mixed" disabled={busy} onClick={() => reset(entry.hash, 'mixed')}>
                   Reset mixed
                 </button>
-                <button
-                  className="reset-btn hard"
-                  disabled={busy}
-                  onClick={() => reset(entry.hash, 'hard')}
-                >
+                <button className="reset-btn hard" disabled={busy} onClick={() => reset(entry.hash, 'hard')}>
                   Reset hard
                 </button>
               </div>
@@ -204,11 +312,21 @@ function HistoryPanel({ repoPath, log, onReset }: HistoryPanelProps) {
 export default function App() {
   const [repoPath, setRepoPath] = useState<string | null>(null)
   const [status, setStatus] = useState<StatusResult | null>(null)
-  const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set())
-  const [activeDiff, setActiveDiff] = useState<{ file: string; content: string } | null>(null)
   const [log, setLog] = useState<CommitEntry[]>([])
   const [rightTab, setRightTab] = useState<'commit' | 'history'>('commit')
   const [loading, setLoading] = useState(false)
+
+  // active diff state
+  const [activeFile, setActiveFile] = useState<string | null>(null)
+  const [activeDiff, setActiveDiff] = useState<string>('')
+
+  // selection: per-file mode and per-hunk ids
+  // fileModes: filePath → 'full' | 'partial' | 'none'
+  const [fileModes, setFileModes] = useState<Map<string, FileMode>>(new Map())
+  // selectedHunks: hunkId → Hunk (kept for patch building)
+  const [selectedHunks, setSelectedHunks] = useState<Map<string, Hunk>>(new Map())
+  // parsed hunks per file (populated when diff is loaded)
+  const [fileHunks, setFileHunks] = useState<Map<string, Hunk[]>>(new Map())
 
   const refresh = useCallback(async (path: string) => {
     setLoading(true)
@@ -216,8 +334,14 @@ export default function App() {
       const [s, l] = await Promise.all([window.git.getStatus(path), window.git.getLog(path)])
       setStatus(s)
       setLog(l)
-      setSelectedFiles(new Set(s.files.map((f) => f.path)))
-      setActiveDiff(null)
+      // default: all files fully selected
+      const modes = new Map<string, FileMode>()
+      s.files.forEach((f) => modes.set(f.path, 'full'))
+      setFileModes(modes)
+      setSelectedHunks(new Map())
+      setFileHunks(new Map())
+      setActiveFile(null)
+      setActiveDiff('')
     } finally {
       setLoading(false)
     }
@@ -230,39 +354,129 @@ export default function App() {
     await refresh(path)
   }
 
-  const showDiff = async (file: string) => {
+  const showDiff = async (filePath: string) => {
     if (!repoPath) return
-    const content = await window.git.getDiff(repoPath, file)
-    setActiveDiff({ file, content })
+    setActiveFile(filePath)
+    const diff = await window.git.getDiff(repoPath, filePath)
+    setActiveDiff(diff)
+    // parse and cache hunks
+    const hunks = parseHunks(filePath, diff)
+    setFileHunks((prev) => new Map(prev).set(filePath, hunks))
   }
 
-  const toggleFile = (path: string) => {
-    setSelectedFiles((prev) => {
-      const next = new Set(prev)
-      if (next.has(path)) next.delete(path)
-      else next.add(path)
+  // Toggle whole file: full ↔ none (clears any partial hunk state)
+  const toggleFile = (filePath: string) => {
+    setFileModes((prev) => {
+      const next = new Map(prev)
+      const current = next.get(filePath) ?? 'none'
+      next.set(filePath, current === 'none' ? 'full' : 'none')
+      return next
+    })
+    // clear hunk selections for this file
+    setSelectedHunks((prev) => {
+      const next = new Map(prev)
+      for (const [id] of prev) {
+        if (id.startsWith(`${filePath}::`)) next.delete(id)
+      }
       return next
     })
   }
 
-  const toggleAll = () => {
-    if (!status) return
-    if (selectedFiles.size === status.files.length) {
-      setSelectedFiles(new Set())
+  // Toggle a single hunk — switches file to 'partial' mode
+  const toggleHunk = (filePath: string, hunkId: string) => {
+    const hunks = fileHunks.get(filePath) ?? []
+
+    setSelectedHunks((prev) => {
+      const next = new Map(prev)
+      if (next.has(hunkId)) {
+        next.delete(hunkId)
+      } else {
+        const hunk = hunks.find((h) => h.id === hunkId)
+        if (hunk) next.set(hunkId, hunk)
+      }
+      // recompute file mode
+      const fileHunkIds = hunks.map((h) => h.id)
+      const selectedCount = fileHunkIds.filter((id) => next.has(id)).length
+      setFileModes((pm) => {
+        const nm = new Map(pm)
+        if (selectedCount === 0) nm.set(filePath, 'none')
+        else if (selectedCount === fileHunkIds.length) nm.set(filePath, 'full')
+        else nm.set(filePath, 'partial')
+        return nm
+      })
+      return next
+    })
+  }
+
+  // Toggle file from diff header (cycle: none → full → none, or partial → full → none)
+  const toggleFileFromDiff = (filePath: string) => {
+    const mode = fileModes.get(filePath) ?? 'none'
+    const hunks = fileHunks.get(filePath) ?? []
+
+    if (mode === 'full') {
+      // deselect everything
+      setFileModes((prev) => new Map(prev).set(filePath, 'none'))
+      setSelectedHunks((prev) => {
+        const next = new Map(prev)
+        for (const [id] of prev) {
+          if (id.startsWith(`${filePath}::`)) next.delete(id)
+        }
+        return next
+      })
     } else {
-      setSelectedFiles(new Set(status.files.map((f) => f.path)))
+      // select all hunks → full
+      setFileModes((prev) => new Map(prev).set(filePath, 'full'))
+      setSelectedHunks((prev) => {
+        const next = new Map(prev)
+        // clear partial hunks for this file first
+        for (const [id] of prev) {
+          if (id.startsWith(`${filePath}::`)) next.delete(id)
+        }
+        // if we had hunks loaded, add them (not strictly needed since 'full' = stage whole file)
+        hunks.forEach((h) => next.set(h.id, h))
+        return next
+      })
     }
   }
+
+  const selectAll = () => {
+    if (!status) return
+    const modes = new Map<string, FileMode>()
+    status.files.forEach((f) => modes.set(f.path, 'full'))
+    setFileModes(modes)
+    setSelectedHunks(new Map())
+  }
+
+  const deselectAll = () => {
+    if (!status) return
+    const modes = new Map<string, FileMode>()
+    status.files.forEach((f) => modes.set(f.path, 'none'))
+    setFileModes(modes)
+    setSelectedHunks(new Map())
+  }
+
+  const allSelected = status?.files.every((f) => fileModes.get(f.path) === 'full') ?? false
+
+  // Build commit args
+  const wholeFiles = (status?.files ?? [])
+    .filter((f) => fileModes.get(f.path) === 'full')
+    .map((f) => f.path)
+
+  // For partial files, group selected hunks by file and build patches
+  const partialFiles = (status?.files ?? []).filter((f) => fileModes.get(f.path) === 'partial')
+  const hunkPatches = partialFiles.map((f) => {
+    const hunks = [...selectedHunks.values()].filter((h) => h.filePath === f.path)
+    return buildPatch(hunks)
+  }).filter(Boolean)
+
+  const totalCount = wholeFiles.length + hunkPatches.length
 
   const files = status?.files ?? []
 
   return (
     <div className="app">
-      {/* Header */}
       <header className="header">
-        <button className="open-btn" onClick={openProject}>
-          Open Project
-        </button>
+        <button className="open-btn" onClick={openProject}>Open Project</button>
         {repoPath && (
           <>
             <span className="repo-path">{repoPath}</span>
@@ -276,9 +490,7 @@ export default function App() {
         <div className="empty-state">
           <div className="empty-icon">⎇</div>
           <div className="empty-title">Open a git project to get started</div>
-          <button className="open-btn large" onClick={openProject}>
-            Open Project
-          </button>
+          <button className="open-btn large" onClick={openProject}>Open Project</button>
         </div>
       ) : (
         <div className="workspace">
@@ -287,8 +499,8 @@ export default function App() {
             <div className="sidebar-header">
               <span>Changes ({files.length})</span>
               {files.length > 0 && (
-                <button className="link-btn" onClick={toggleAll}>
-                  {selectedFiles.size === files.length ? 'Deselect all' : 'Select all'}
+                <button className="link-btn" onClick={allSelected ? deselectAll : selectAll}>
+                  {allSelected ? 'Deselect all' : 'Select all'}
                 </button>
               )}
             </div>
@@ -298,7 +510,8 @@ export default function App() {
               <ul className="file-list">
                 {files.map((f) => {
                   const label = statusLabel(f)
-                  const isActive = activeDiff?.file === f.path
+                  const mode = fileModes.get(f.path) ?? 'none'
+                  const isActive = activeFile === f.path
                   return (
                     <li
                       key={f.path}
@@ -307,27 +520,21 @@ export default function App() {
                     >
                       <input
                         type="checkbox"
-                        checked={selectedFiles.has(f.path)}
+                        checked={mode !== 'none'}
+                        ref={(el) => { if (el) el.indeterminate = mode === 'partial' }}
                         onChange={() => toggleFile(f.path)}
                         onClick={(e) => e.stopPropagation()}
                       />
-                      <span className="file-status" style={{ color: statusColor(label) }}>
-                        {label}
-                      </span>
-                      <span className="file-name" title={f.path}>
-                        {f.path}
-                      </span>
+                      <span className="file-status" style={{ color: statusColor(label) }}>{label}</span>
+                      <span className="file-name" title={f.path}>{f.path}</span>
+                      {mode === 'partial' && <span className="partial-badge">partial</span>}
                     </li>
                   )
                 })}
               </ul>
             )}
             <div className="sidebar-footer">
-              <button
-                className="refresh-btn"
-                onClick={() => repoPath && refresh(repoPath)}
-                disabled={loading}
-              >
+              <button className="refresh-btn" onClick={() => repoPath && refresh(repoPath)} disabled={loading}>
                 ↺ Refresh
               </button>
             </div>
@@ -335,35 +542,32 @@ export default function App() {
 
           {/* Center: diff viewer */}
           <main className="diff-area">
-            {activeDiff ? (
-              <DiffViewer diff={activeDiff.content} file={activeDiff.file} />
+            {activeFile && activeDiff ? (
+              <DiffViewer
+                filePath={activeFile}
+                diff={activeDiff}
+                fileMode={fileModes.get(activeFile) ?? 'none'}
+                selectedHunkIds={new Set([...selectedHunks.keys()].filter((id) => id.startsWith(`${activeFile}::`)))}
+                onToggleFile={() => toggleFileFromDiff(activeFile)}
+                onToggleHunk={(id) => toggleHunk(activeFile, id)}
+              />
             ) : (
-              <div className="diff-empty">
-                <span>Select a file to view diff</span>
-              </div>
+              <div className="diff-empty"><span>Select a file to view diff</span></div>
             )}
           </main>
 
           {/* Right: commit / history */}
           <aside className="right-panel">
             <div className="tab-bar">
-              <button
-                className={`tab-btn${rightTab === 'commit' ? ' active' : ''}`}
-                onClick={() => setRightTab('commit')}
-              >
-                Commit
-              </button>
-              <button
-                className={`tab-btn${rightTab === 'history' ? ' active' : ''}`}
-                onClick={() => setRightTab('history')}
-              >
-                History
-              </button>
+              <button className={`tab-btn${rightTab === 'commit' ? ' active' : ''}`} onClick={() => setRightTab('commit')}>Commit</button>
+              <button className={`tab-btn${rightTab === 'history' ? ' active' : ''}`} onClick={() => setRightTab('history')}>History</button>
             </div>
             {rightTab === 'commit' ? (
               <CommitPanel
                 repoPath={repoPath}
-                selectedFiles={selectedFiles}
+                wholeFiles={wholeFiles}
+                hunkPatches={hunkPatches}
+                totalCount={totalCount}
                 onCommitted={() => refresh(repoPath)}
               />
             ) : (
