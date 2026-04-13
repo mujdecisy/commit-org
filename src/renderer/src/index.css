@@ -127,6 +127,7 @@ html, body, #root { height: 100%; overflow: hidden; }
 
 /* ── Sidebar ─────────────────────────────────────────────────────────────── */
 .sidebar {
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -200,7 +201,7 @@ html, body, #root { height: 100%; overflow: hidden; }
 }
 
 /* ── Diff area ───────────────────────────────────────────────────────────── */
-.diff-area { overflow: hidden; display: flex; flex-direction: column; }
+.diff-area { flex: 1; min-width: 0; overflow: hidden; display: flex; flex-direction: column; }
 
 .diff-empty {
   flex: 1;
@@ -240,6 +241,7 @@ html, body, #root { height: 100%; overflow: hidden; }
 
 /* ── Right panel ─────────────────────────────────────────────────────────── */
 .right-panel {
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
