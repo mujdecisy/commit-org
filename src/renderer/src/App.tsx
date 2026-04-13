@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from 'react'
 import type { FileStatus, CommitEntry, StatusResult, UpstreamInfo } from '../../preload/index.d'
+import { version } from '../../../package.json'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -13,6 +14,19 @@ interface Hunk {
 
 // file is either fully selected, partially (some hunks), or deselected
 type FileMode = 'full' | 'partial' | 'none'
+
+interface TreeNode {
+  name: string
+  children: Map<string, TreeNode>
+  isFile: boolean
+}
+
+interface TreeItem {
+  path: string
+  display: string
+  indent: number
+  isFile: boolean
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -84,6 +98,34 @@ function buildPatch(hunks: Hunk[]): string {
   return `${fileHeader}${body}\n`
 }
 
+/** Build a tree structure from file paths */
+function buildTree(paths: string[]): TreeNode {
+  const root: TreeNode = { name: '', children: new Map(), isFile: false }
+  for (const path of paths) {
+    const parts = path.split('/')
+    let current = root
+    for (const part of parts) {
+      if (!current.children.has(part)) {
+        current.children.set(part, { name: part, children: new Map(), isFile: false })
+      }
+      current = current.children.get(part)!
+    }
+    current.isFile = true
+  }
+  return root
+}
+
+/** Collect all folder paths from tree */
+function collectFolders(node: TreeNode, prefix: string, folders: Set<string>) {
+  for (const [name, child] of node.children) {
+    if (!child.isFile) {
+      const folderPath = prefix + name + '/'
+      folders.add(folderPath)
+      collectFolders(child, folderPath, folders)
+    }
+  }
+}
+
 // ── DiffViewer ────────────────────────────────────────────────────────────────
 
 interface DiffViewerProps {
@@ -119,7 +161,7 @@ function DiffViewer({
             checked={fileMode !== 'none'}
             ref={(el) => { if (el) el.indeterminate = fileMode === 'partial' }}
             onChange={onToggleFile}
-          />
+          />n 
           <span className="diff-file-name">{filePath}</span>
         </label>
         {hasHunks && (
@@ -385,6 +427,9 @@ export default function App() {
   // parsed hunks per file (populated when diff is loaded)
   const [fileHunks, setFileHunks] = useState<Map<string, Hunk[]>>(new Map())
 
+  // expanded folders
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set())
+
   const refresh = useCallback(async (path: string) => {
     setLoading(true)
     try {
@@ -405,6 +450,11 @@ export default function App() {
       setFileHunks(new Map())
       setActiveFile(null)
       setActiveDiff('')
+      // expand all folders
+      const tree = buildTree(s.files.map(f => f.path))
+      const allFolders = new Set<string>()
+      collectFolders(tree, '', allFolders)
+      setExpandedFolders(allFolders)
     } finally {
       setLoading(false)
     }
@@ -520,6 +570,18 @@ export default function App() {
 
   const allSelected = status?.files.every((f) => fileModes.get(f.path) === 'full') ?? false
 
+  const toggleFolder = (folderPath: string) => {
+    setExpandedFolders((prev) => {
+      const next = new Set(prev)
+      if (next.has(folderPath)) {
+        next.delete(folderPath)
+      } else {
+        next.add(folderPath)
+      }
+      return next
+    })
+  }
+
   // Build commit args
   const wholeFiles = (status?.files ?? [])
     .filter((f) => fileModes.get(f.path) === 'full')
@@ -535,6 +597,30 @@ export default function App() {
   const totalCount = wholeFiles.length + hunkPatches.length
 
   const files = status?.files ?? []
+
+  // Build tree items for display
+  const tree = buildTree(files.map(f => f.path))
+  const treeItems: TreeItem[] = []
+  function traverse(node: TreeNode, prefix: string, indent: number, expanded: Set<string>) {
+    const sorted = Array.from(node.children.entries()).sort(([a], [b]) => {
+      const aIsFile = node.children.get(a)!.isFile
+      const bIsFile = node.children.get(b)!.isFile
+      if (aIsFile !== bIsFile) return aIsFile ? 1 : -1
+      return a.localeCompare(b)
+    })
+    for (const [name, child] of sorted) {
+      if (child.isFile) {
+        treeItems.push({ path: prefix + name, display: name, indent, isFile: true })
+      } else {
+        const folderPath = prefix + name + '/'
+        treeItems.push({ path: folderPath, display: name + '/', indent, isFile: false })
+        if (expanded.has(folderPath)) {
+          traverse(child, folderPath, indent + 1, expanded)
+        }
+      }
+    }
+  }
+  traverse(tree, '', 0, expandedFolders)
 
   return (
     <div className="app">
@@ -571,7 +657,7 @@ export default function App() {
       ) : (
         <div className="workspace">
           {/* Left: file list */}
-          <aside className="sidebar">
+          <aside className="sidebar" style={{ paddingLeft: '10px' }}>
             <div className="sidebar-header">
               <span>Changes ({files.length})</span>
               {files.length > 0 && (
@@ -584,7 +670,22 @@ export default function App() {
               <div className="no-changes">No changes</div>
             ) : (
               <ul className="file-list">
-                {files.map((f) => {
+                {treeItems.map((item) => {
+                  if (!item.isFile) {
+                    const isExpanded = expandedFolders.has(item.path)
+                    return (
+                      <li
+                        key={item.path}
+                        className="file-item folder"
+                        style={{ paddingLeft: `${item.indent * 20}px` }}
+                        onClick={() => toggleFolder(item.path)}
+                      >
+                        <span className="folder-icon">{isExpanded ? '▼' : '▶'}</span>
+                        <span className="file-name">{item.display}</span>
+                      </li>
+                    )
+                  }
+                  const f = files.find(ff => ff.path === item.path)!
                   const label = statusLabel(f)
                   const mode = fileModes.get(f.path) ?? 'none'
                   const isActive = activeFile === f.path
@@ -593,6 +694,7 @@ export default function App() {
                       key={f.path}
                       className={`file-item${isActive ? ' active' : ''}`}
                       onClick={() => showDiff(f.path)}
+                      style={{ paddingLeft: `${item.indent * 20}px` }}
                     >
                       <input
                         type="checkbox"
@@ -602,7 +704,7 @@ export default function App() {
                         onClick={(e) => e.stopPropagation()}
                       />
                       <span className="file-status" style={{ color: statusColor(label) }}>{label}</span>
-                      <span className="file-name" title={f.path}>{f.path}</span>
+                      <span className="file-name" title={f.path}>{item.display}</span>
                       {mode === 'partial' && <span className="partial-badge">partial</span>}
                     </li>
                   )
@@ -657,6 +759,10 @@ export default function App() {
           </aside>
         </div>
       )}
+      <footer className="footer">
+        <span>Version {version}</span>
+        <a href="https://mujdecisy.github.io" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)', textDecoration: 'none' }}>author ♥</a>
+      </footer>
     </div>
   )
 }
