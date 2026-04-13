@@ -407,6 +407,11 @@ ipcMain.handle(
   ) => {
     const git = createGit(repoPath)
 
+    // Clear the index first so that only explicitly selected files/hunks
+    // end up in the commit — prevents pre-staged or unselected changes from
+    // sneaking in via a plain `git commit`.
+    await git.raw(['reset', 'HEAD'])
+
     if (opts.files.length > 0) {
       await git.add(opts.files)
     }
