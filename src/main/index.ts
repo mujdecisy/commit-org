@@ -130,12 +130,23 @@ class WslGitAdapter implements GitAdapter {
     this.linuxPath = linuxPath
   }
 
+  private bashEscape(s: string): string {
+    // Single-quote escape: safe for any string value in bash
+    return `'${s.replaceAll("'", "'\\''")}'`
+  }
+
   private async run(args: string[], env?: Record<string, string>): Promise<string> {
-    // Use -e to execute git directly without invoking a shell inside WSL.
-    // This avoids shell interpretation of special characters in arguments.
-    const wslArgs = ['-d', this.distro, '-e', 'git', '-C', this.linuxPath, ...args]
-    const extraEnv = env ? { ...process.env, ...env } : process.env
-    const { stdout } = await execFileAsync('wsl', wslArgs, { env: extraEnv })
+    // Run bash via -e (no WSL shell wrapper) and pass all git args as positional
+    // parameters through "$@". This prevents WSL from mis-parsing args that start
+    // with "--" (like --soft, --hard) as its own option flags.
+    // Env vars are injected into the bash script string with single-quote escaping.
+    const envStr = env
+      ? Object.entries(env).map(([k, v]) => `${k}=${this.bashEscape(v)}`).join(' ') + ' '
+      : ''
+    const script = `${envStr}git "$@"`
+    // '_' is $0 (script name placeholder); git args start at $1 via "$@"
+    const wslArgs = ['-d', this.distro, '-e', 'bash', '-c', script, '_', '-C', this.linuxPath, ...args]
+    const { stdout } = await execFileAsync('wsl', wslArgs)
     return stdout
   }
 
