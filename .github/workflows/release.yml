@@ -19,7 +19,7 @@ jobs:
         run: npm ci
 
       - name: Set version from tag
-        run: npm version ${GITHUB_REF_NAME#v} --no-git-tag-version
+        run: npm pkg set version=${GITHUB_REF_NAME#v}
 
       - name: Build and package (macOS)
         run: npm run build:mac -- --publish never
@@ -43,7 +43,7 @@ jobs:
         run: npm ci
 
       - name: Set version from tag
-        run: npm version ($env:GITHUB_REF_NAME -replace '^v','') --no-git-tag-version
+        run: npm pkg set version=$($env:GITHUB_REF_NAME -replace '^v','')
 
       - name: Build and package (Windows)
         run: npm run build:win -- --publish never
