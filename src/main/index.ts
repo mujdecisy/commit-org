@@ -350,7 +350,14 @@ ipcMain.handle('git:getLog', async (_, repoPath: string) => {
 
 ipcMain.handle('git:resetToCommit', async (_, repoPath: string, hash: string, mode: string) => {
   const git = createGit(repoPath)
-  await git.reset([`--${mode}`, hash])
+  const trimmedHash = hash.trim()
+  const trimmedMode = mode.trim()
+  try {
+    await git.raw(['cat-file', '-e', trimmedHash])
+  } catch {
+    throw new Error(`Commit ${trimmedHash} not found in repository`)
+  }
+  await git.reset([`--${trimmedMode}`, trimmedHash])
 })
 
 ipcMain.handle('git:getUpstreamInfo', async (_, repoPath: string) => {
@@ -386,7 +393,7 @@ ipcMain.handle('git:resetToUpstream', async (_, repoPath: string, mode: string) 
   }
   const upstream = (await git.raw(['rev-parse', '--abbrev-ref', `${branch}@{u}`])).trim()
   await git.fetch()
-  await git.reset([`--${mode}`, upstream])
+  await git.reset([`--${mode.trim()}`, upstream])
 })
 
 ipcMain.handle(
