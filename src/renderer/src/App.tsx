@@ -360,6 +360,7 @@ export default function App() {
   const [log, setLog] = useState<CommitEntry[]>([])
   const [rightTab, setRightTab] = useState<'commit' | 'history'>('commit')
   const [loading, setLoading] = useState(false)
+  const [disclaimerDismissed, setDisclaimerDismissed] = useState(false)
 
   // active diff state
   const [activeFile, setActiveFile] = useState<string | null>(null)
@@ -523,13 +524,26 @@ export default function App() {
       <header className="header">
         <button className="open-btn" onClick={openProject}>Open Project</button>
         {repoPath && (
-          <>
-            <span className="repo-path">{repoPath}</span>
-            {status?.branch && <span className="branch-badge">{status.branch}</span>}
-          </>
+          <span className="repo-path">{repoPath}</span>
         )}
         {loading && <span className="loading-dot">●</span>}
+        {status?.branch && (
+          <span className="branch-display">
+            <span className="branch-icon">⎇</span>
+            {status.branch}
+          </span>
+        )}
       </header>
+
+      {!disclaimerDismissed && (
+        <div className="disclaimer-banner">
+          <span className="disclaimer-icon">⚠</span>
+          <span className="disclaimer-text">
+            This tool is only for commit rearrangement. Switch to the correct branch before, and do the push operations after, in your current VCS tools.
+          </span>
+          <button className="disclaimer-close" onClick={() => setDisclaimerDismissed(true)}>✕</button>
+        </div>
+      )}
 
       {!repoPath ? (
         <div className="empty-state">
