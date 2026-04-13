@@ -109,16 +109,26 @@ html, body, #root { height: 100%; overflow: hidden; }
 /* ── Workspace ───────────────────────────────────────────────────────────── */
 .workspace {
   flex: 1;
-  display: grid;
-  grid-template-columns: 240px 1fr 280px;
+  display: flex;
+  flex-direction: row;
   overflow: hidden;
 }
+.workspace.dragging { cursor: col-resize; user-select: none; }
+
+/* ── Resize handle ───────────────────────────────────────────────────────── */
+.resize-handle {
+  width: 4px;
+  flex-shrink: 0;
+  background: var(--border);
+  cursor: col-resize;
+  transition: background 0.15s;
+}
+.resize-handle:hover, .workspace.dragging .resize-handle { background: var(--accent); }
 
 /* ── Sidebar ─────────────────────────────────────────────────────────────── */
 .sidebar {
   display: flex;
   flex-direction: column;
-  border-right: 1px solid var(--border);
   overflow: hidden;
 }
 
@@ -232,7 +242,6 @@ html, body, #root { height: 100%; overflow: hidden; }
 .right-panel {
   display: flex;
   flex-direction: column;
-  border-left: 1px solid var(--border);
   overflow: hidden;
 }
 

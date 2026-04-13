@@ -415,6 +415,34 @@ export default function App() {
   const [disclaimerDismissed, setDisclaimerDismissed] = useState(false)
   const [logError, setLogError] = useState<string | null>(null)
 
+  // resizable panels
+  const [sidebarWidth, setSidebarWidth] = useState(240)
+  const [rightWidth, setRightWidth] = useState(280)
+  const [dragging, setDragging] = useState<{
+    which: 'left' | 'right'
+    startX: number
+    startWidth: number
+  } | null>(null)
+
+  useEffect(() => {
+    if (!dragging) return
+    const onMove = (e: MouseEvent) => {
+      const delta = e.clientX - dragging.startX
+      if (dragging.which === 'left') {
+        setSidebarWidth(Math.max(150, Math.min(520, dragging.startWidth + delta)))
+      } else {
+        setRightWidth(Math.max(200, Math.min(520, dragging.startWidth - delta)))
+      }
+    }
+    const onUp = () => setDragging(null)
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+    return () => {
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+    }
+  }, [dragging])
+
   // active diff state
   const [activeFile, setActiveFile] = useState<string | null>(null)
   const [activeDiff, setActiveDiff] = useState<string>('')
@@ -655,9 +683,9 @@ export default function App() {
           <button className="open-btn large" onClick={openProject}>Open Project</button>
         </div>
       ) : (
-        <div className="workspace">
+        <div className={`workspace${dragging ? ' dragging' : ''}`}>
           {/* Left: file list */}
-          <aside className="sidebar" style={{ paddingLeft: '10px' }}>
+          <aside className="sidebar" style={{ width: sidebarWidth, minWidth: sidebarWidth }}>
             <div className="sidebar-header">
               <span>Changes ({files.length})</span>
               {files.length > 0 && (
@@ -718,6 +746,11 @@ export default function App() {
             </div>
           </aside>
 
+          <div
+            className="resize-handle"
+            onMouseDown={(e) => setDragging({ which: 'left', startX: e.clientX, startWidth: sidebarWidth })}
+          />
+
           {/* Center: diff viewer */}
           <main className="diff-area">
             {activeFile && activeDiff ? (
@@ -734,8 +767,13 @@ export default function App() {
             )}
           </main>
 
+          <div
+            className="resize-handle"
+            onMouseDown={(e) => setDragging({ which: 'right', startX: e.clientX, startWidth: rightWidth })}
+          />
+
           {/* Right: commit / history */}
-          <aside className="right-panel">
+          <aside className="right-panel" style={{ width: rightWidth, minWidth: rightWidth }}>
             <div className="tab-bar">
               <button className={`tab-btn${rightTab === 'commit' ? ' active' : ''}`} onClick={() => setRightTab('commit')}>Commit</button>
               <button className={`tab-btn${rightTab === 'history' ? ' active' : ''}`} onClick={() => setRightTab('history')}>History</button>
