@@ -14,8 +14,15 @@
     "appId": "com.commitorg.app",
     "productName": "Commit Org",
     "directories": { "output": "dist" },
-    "mac": { "target": "dmg" },
-    "win": { "target": "nsis" },
+    "icon": "resources/icon.png",
+    "mac": {
+      "target": "dmg",
+      "icon": "resources/icon.icns"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "resources/icon.ico"
+    },
     "files": ["out/**/*"]
   },
   "devDependencies": {
