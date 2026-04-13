@@ -18,12 +18,20 @@ export interface CommitEntry {
   author: string
 }
 
+export interface UpstreamInfo {
+  upstream: string | null
+  behind: number
+  error: string | null
+}
+
 export interface GitAPI {
   openProject(): Promise<string | null>
   getStatus(path: string): Promise<StatusResult>
   getDiff(path: string, file: string): Promise<string>
   getLog(path: string): Promise<CommitEntry[]>
   resetToCommit(path: string, hash: string, mode: string): Promise<void>
+  getUpstreamInfo(path: string): Promise<UpstreamInfo>
+  resetToUpstream(path: string, mode: string): Promise<void>
   createCommit(
     path: string,
     opts: { message: string; date: string; files: string[]; patches: string[] }

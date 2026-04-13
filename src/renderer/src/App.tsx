@@ -1,5 +1,5 @@
-import { useState, useCallback } from 'react'
-import type { FileStatus, CommitEntry, StatusResult } from '../../preload/index.d'
+import { useState, useCallback, useEffect } from 'react'
+import type { FileStatus, CommitEntry, StatusResult, UpstreamInfo } from '../../preload/index.d'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -255,6 +255,11 @@ interface HistoryPanelProps {
 function HistoryPanel({ repoPath, log, onReset }: HistoryPanelProps) {
   const [expanded, setExpanded] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [upstream, setUpstream] = useState<UpstreamInfo | null>(null)
+
+  useEffect(() => {
+    globalThis.window.git.getUpstreamInfo(repoPath).then(setUpstream)
+  }, [repoPath, log])
 
   const reset = async (hash: string, mode: string) => {
     setBusy(true)
@@ -269,12 +274,52 @@ function HistoryPanel({ repoPath, log, onReset }: HistoryPanelProps) {
     }
   }
 
+  const resetToUpstream = async (mode: string) => {
+    setBusy(true)
+    try {
+      await window.git.resetToUpstream(repoPath, mode)
+      onReset()
+    } catch (e) {
+      alert(`Reset failed: ${e}`)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   if (log.length === 0) {
     return <div className="diff-empty"><span>No commits yet</span></div>
   }
 
   return (
     <div className="history-list">
+      {upstream?.upstream && (
+        <div className="upstream-section">
+          <div className="upstream-info">
+            <span className="upstream-label">Upstream</span>
+            <span className="upstream-name">{upstream.upstream}</span>
+            {upstream.behind > 0 && (
+              <span className="upstream-behind">{upstream.behind} behind</span>
+            )}
+            {upstream.behind === 0 && (
+              <span className="upstream-uptodate">up to date</span>
+            )}
+          </div>
+          <div className="reset-buttons">
+            <button className="reset-btn soft" disabled={busy} onClick={() => resetToUpstream('soft')}>
+              Reset soft
+            </button>
+            <button className="reset-btn mixed" disabled={busy} onClick={() => resetToUpstream('mixed')}>
+              Reset mixed
+            </button>
+            <button className="reset-btn hard" disabled={busy} onClick={() => resetToUpstream('hard')}>
+              Reset hard
+            </button>
+          </div>
+        </div>
+      )}
+      {upstream?.error && !upstream.upstream && (
+        <div className="upstream-section upstream-error">{upstream.error}</div>
+      )}
       {log.map((entry) => (
         <div key={entry.hash} className="history-entry">
           <div

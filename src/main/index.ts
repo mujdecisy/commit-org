@@ -112,6 +112,42 @@ ipcMain.handle('git:resetToCommit', async (_, repoPath: string, hash: string, mo
   await git.reset([`--${mode}`, hash])
 })
 
+ipcMain.handle('git:getUpstreamInfo', async (_, repoPath: string) => {
+  try {
+    const git = simpleGit(repoPath)
+    const branch = (await git.status()).current
+    if (!branch) {
+      return { upstream: null, behind: 0, error: 'Not on a branch' }
+    }
+    // get upstream tracking ref
+    let upstream: string | null = null
+    try {
+      upstream = (await git.raw(['rev-parse', '--abbrev-ref', `${branch}@{u}`])).trim()
+    } catch {
+      return { upstream: null, behind: 0, error: 'No upstream configured' }
+    }
+    // count commits behind
+    const behind = Number.parseInt(
+      (await git.raw(['rev-list', '--count', `HEAD..${upstream}`])).trim(),
+      10
+    )
+    return { upstream, behind, error: null }
+  } catch (e) {
+    return { upstream: null, behind: 0, error: String(e) }
+  }
+})
+
+ipcMain.handle('git:resetToUpstream', async (_, repoPath: string, mode: string) => {
+  const git = simpleGit(repoPath)
+  const branch = (await git.status()).current
+  if (!branch) {
+    throw new Error('Not on a branch')
+  }
+  const upstream = (await git.raw(['rev-parse', '--abbrev-ref', `${branch}@{u}`])).trim()
+  await git.fetch()
+  await git.reset([`--${mode}`, upstream])
+})
+
 ipcMain.handle(
   'git:createCommit',
   async (

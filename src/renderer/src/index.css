@@ -303,6 +303,59 @@ html, body, #root { height: 100%; overflow: hidden; }
 /* ── History panel ───────────────────────────────────────────────────────── */
 .history-list { flex: 1; overflow-y: auto; }
 
+.upstream-section {
+  padding: 10px 12px;
+  border-bottom: 2px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--surface2);
+}
+
+.upstream-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.upstream-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+}
+
+.upstream-name {
+  font-family: 'SF Mono', 'Consolas', monospace;
+  font-size: 11px;
+  color: var(--hunk);
+}
+
+.upstream-behind {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--remove);
+  background: rgba(192, 57, 43, 0.08);
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+
+.upstream-uptodate {
+  font-size: 11px;
+  color: var(--add);
+  background: rgba(26, 127, 60, 0.08);
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+
+.upstream-error {
+  font-size: 11px;
+  color: var(--text-dim);
+  font-style: italic;
+}
+
 .history-entry { border-bottom: 1px solid var(--border); }
 
 .history-header {
