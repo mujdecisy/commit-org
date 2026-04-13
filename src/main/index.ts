@@ -180,13 +180,15 @@ class WslGitAdapter implements GitAdapter {
     ])
     const all: LogEntry[] = out
       .split('\0')
+      // git adds \n between records; trim so hashes are clean
+      .map((t) => t.trim())
       .reduce<string[][]>((rows, token, i) => {
         const idx = Math.floor(i / 4)
         if (!rows[idx]) rows[idx] = []
         rows[idx].push(token)
         return rows
       }, [])
-      .filter((row) => row[0]?.trim())
+      .filter((row) => row[0])
       .map(([hash, message, date, authorName]) => ({
         hash: hash ?? '',
         message: message ?? '',
